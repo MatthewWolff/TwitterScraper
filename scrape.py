@@ -42,13 +42,11 @@ def increment_day(date, i):
     return date + datetime.timedelta(days=i)
 
 
-def scrape(start, end, user, by=31):  # 31 days at a time
+def scrape(start, end, user, by, delay):
     # no touchie
     id_selector = ".time a.tweet-timestamp"
     tweet_selector = "li.js-stream-item"
 
-    # customize
-    delay = 2  # time to wait in seconds on each page load before reading the page
     driver = webdriver.Chrome()  # options are Chrome() Firefox() Safari()
     days = (end - start).days + 1
     ids = []
@@ -111,12 +109,17 @@ if __name__ == "__main__":
     parser.add_argument("-u", help="Scrape this user's Tweets")
     parser.add_argument("--since", help="Get Tweets after this date (Example: 2010-01-01).")
     parser.add_argument("--until", help="Get Tweets before this date (Example: 2018-12-07.")
+    parser.add_argument("--by", help="Look at this many days at a time when scraping")
+    parser.add_argument("--delay", help="Time to wait in seconds on each page load before reading the page")
     args = parser.parse_args()
 
     date_format = "%Y-%m-%d"
     parse_date = datetime.datetime.strptime
-    _from = parse_date(args.since, date_format) if args.since is not None else get_join_date(args.u)
-    _to = parse_date(args.until, date_format) if args.until is not None else datetime.datetime.now()
+    username = args.u
+    begin = parse_date(args.since, date_format) if args.since is not None else get_join_date(username)
+    end = parse_date(args.until, date_format) if args.until is not None else datetime.datetime.now()
+    by = int(args.delay) if args.by is not None and args.by.isdigit() else 1
+    delay_time = int(args.delay) if args.delay is not None and args.delay.isdigit() else 2
 
-    tweet_ids = scrape(_from, _to, user=args.u)
+    tweet_ids = scrape(begin, end, username, by, delay_time)
     metadata.retrieve(outfile=args.u + ".json", tweet_ids=tweet_ids)

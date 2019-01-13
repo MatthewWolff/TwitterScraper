@@ -39,6 +39,10 @@ We will query, month by month, a user's entire time on twitter. We'll collect th
   * `-u` followed by the username [required]
   * `--since` followed by a date string e.g (2017-01-01). Defaults to whenever the user created their twitter
   * `--until` followed by a date string e.g (2018-01-01). Defaults to the current day 
+  * `--by` followed by the number of days to scrape at once (default: 1)
+    * If someone tweets a lot, keep this low
+  * `--delay` followed by an integer. This will be the number of seconds to wait on each page load before reading the page
+    * if your internet is slow, put this higher (default: 2)
 * a browser window will pop up and begin scraping month by month
 * when the browser window closes, metadata collections begins
 * when it finishes collection, it will dump all the data to a `.json` file that corresponds to the user
