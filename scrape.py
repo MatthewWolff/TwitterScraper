@@ -102,7 +102,7 @@ class Scraper:
             days = (end - start).days + 1
 
             # scrape tweets using a sliding window
-	    window_start, ids = start, set()
+            window_start, ids = start, set()
             for _ in range(days)[::by]:
                 # scrape the proper window of time for tweets (must format window beginning and end)
                 since = window_start.strftime(DATE_FORMAT)
