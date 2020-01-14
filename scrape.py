@@ -4,6 +4,7 @@ import argparse
 import json
 from datetime import datetime, timedelta
 from functools import reduce
+from math import ceil
 from os import path
 from time import sleep
 
@@ -24,17 +25,19 @@ from api_key import key
 ########################################################################
 
 DATE_FORMAT = "%Y-%m-%d"
-METADATA_LIST = [  # note: "id" is already used later
+METADATA_LIST = [  # note: "id" is automatically included (hash key)
     "full_text",
     "in_reply_to_status_id"
 ]
+BATCH_SIZE = 100  # http://docs.tweepy.org/en/v3.5.0/api.html#API.statuses_lookup
+API_DELAY = 6  # seconds
 
 # colors for output
 RESET = "\033[0m"
-bw = lambda s: "\033[1m\033[37m" + s + RESET  # bold white
-w = lambda s: "\033[1m" + s + RESET  # white
-g = lambda s: "\033[32m" + s + RESET  # green
-y = lambda s: "\033[33m" + s + RESET  # yellow
+bw = lambda s: "\033[1m\033[37m" + str(s) + RESET  # bold white
+w = lambda s: "\033[1m" + str(s) + RESET  # white
+g = lambda s: "\033[32m" + str(s) + RESET  # green
+y = lambda s: "\033[33m" + str(s) + RESET  # yellow
 
 
 class Scraper:
@@ -79,9 +82,12 @@ class Scraper:
     def scrape(self, start, end, by, loading_delay):
         self.__check_if_scrapable()
         print(bw("["), g("scraping user"), w("@") + y(self.handle) + g("..."), bw("]"))
-        print(bw("["), g("found"), w(str(len(self.tweets))), g("existing tweets"), bw("]"))
+        print(bw("["), w(len(self.tweets)), g("existing tweets in"), y(self.outfile), bw("]"))
+        print(bw("["), g("searching for tweets..."), bw("]"))
         self.__find_tweets(start, end, by, loading_delay)
-        print(bw("["), g("found"), w(str(len(self.new_tweets))), g("new tweets"), bw("]"))
+        print(bw("["), g("found"), w(len(self.new_tweets)), g("new tweets"), bw("]"))
+        print(bw("["), g("retrieving new tweets (estimated time: ") +
+              y(str(ceil(len(self.new_tweets) / BATCH_SIZE) * API_DELAY) + " seconds") + g(")..."), bw("]"))
         self.__retrieve_new_tweets()
         print(bw("["), g("finished scraping"), bw("]"))
 
@@ -145,17 +151,20 @@ class Scraper:
         self.new_tweets = set()  # reset
 
     def __collect_new_tweet_metadata(self):
-        batch_size = 100  # http://docs.tweepy.org/en/v3.5.0/api.html#API.statuses_lookup
-        batch_indices = range(0, len(self.new_tweets), batch_size)
+        batch_indices = range(0, len(self.new_tweets), BATCH_SIZE)
         new_tweet_list = list(self.new_tweets)
-        batches = [new_tweet_list[i:i + batch_size] for i in batch_indices]
+        batches = [new_tweet_list[i:i + BATCH_SIZE] for i in batch_indices]
+        batch_num = 0  # used for enumerating batches
 
         def extract_data(tweet_list):  # dictionary of id: metadata key-value pairs
             return dict((tw["id"], {attr: tw[attr] for attr in METADATA_LIST}) for tw in tweet_list)
 
         def staggered_lookup(id_batch):
+            nonlocal batch_num
+            batch_num += 1
+            print(bw("-"), g("batch %s of %s" % (y(batch_num), y(len(batches)))))
             queried_tweets = self.api.statuses_lookup(id_batch, tweet_mode='extended')
-            sleep(6)  # don't hit API rate limit
+            sleep(API_DELAY)  # don't hit API rate limit
             return extract_data(t._json for t in queried_tweets)
 
         # collect all tweets as a list of dictionaries
@@ -184,7 +193,8 @@ def get_join_date(handle):
     soup = BeautifulSoup(page, "html.parser")
     date_string = soup.find("span", {"class": "ProfileHeaderCard-joinDateText"})["title"].split(" - ")[1]
     date_string = "0" + date_string if date_string[1] is " " else date_string  # add on leading 0 if needed
-    return datetime.strptime(date_string, "%d %b %Y")
+    join_date = datetime.strptime(date_string, "%d %b %Y")
+    return join_date
 
 
 if __name__ == "__main__":
@@ -192,9 +202,9 @@ if __name__ == "__main__":
                                      description="scrape.py - Twitter Scraping Tool")
     parser.add_argument("-u", "--username", help="Scrape this user's Tweets", required=True)
     parser.add_argument("--since", help="Get Tweets after this date (Example: 2010-01-01).")
-    parser.add_argument("--until", help="Get Tweets before this date (Example: 2018-12-07.")
-    parser.add_argument("--by", help="Scrape this many days at a time", type=int, default=14)
-    parser.add_argument("--delay", help="Time given to load a page before scraping it (seconds)", type=int, default=2)
+    parser.add_argument("--until", help="Get Tweets before this date (Example: 2018-12-07).")
+    parser.add_argument("--by", help="Scrape this many days at a time", type=int, default=7)
+    parser.add_argument("--delay", help="Time given to load a page before scraping it (seconds)", type=int, default=3)
     args = parser.parse_args()
 
     begin = datetime.strptime(args.since, DATE_FORMAT) if args.since else get_join_date(args.username)
