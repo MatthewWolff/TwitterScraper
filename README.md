@@ -8,6 +8,8 @@ We can query a user's entire time on twitter, finding the IDs for each of their 
 
 I've included a list of all available tweet attributes at the top of `scrape.py` so that you can adjust things as you wish.
 
+NOTE: This scraper will notice if a user has less than 3200 tweets. In this case, it will do a "quickscrape" to grab all available tweets at once (significantly faster). It will store them in the exact same manner as a manual scrape.
+
 ## Requirements (or rather, what I used)
 
 * python3 (3.7.3)
@@ -15,6 +17,7 @@ I've included a list of all available tweet attributes at the top of `scrape.py`
   * selenium (3.141.0)
   * tweepy (3.8.0)
   * requests (2.21.0)
+  * requests_oauthlib (1.3.0)
   * beautifulsoup4 (4.7.1)
 * [Chrome webdriver](https://chromedriver.chromium.org/downloads) (you can use other kinds. Personally, `brew install chromedriver`)
 * [Twitter API developer credentials](https://dev.twitter.com)
@@ -64,6 +67,15 @@ $ ./scrape.py -u phillipcompeau --since 2019-01-01 --by 7
 - batch 6 of 6
 [ finished scraping ]
 [ stored tweets in phillipcompeau.json ]
+
+$ ./scrape.py -u realwoofy
+[ scraping user @realwoofy... ]
+[ 149 existing tweets in realwoofy.json ]
+[ searching for tweets... ]
+[ user has fewer than 3200 tweets, conducting quickscrape... ]
+[ found 3 new tweets ]
+[ finished scraping ]
+[ stored tweets in realwoofy.json ]
 ```
 
 ## Using the Scraper

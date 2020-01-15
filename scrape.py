@@ -10,7 +10,8 @@ from time import sleep
 
 import tweepy
 from bs4 import BeautifulSoup
-from requests import get
+from requests import get, codes
+from requests_oauthlib import OAuth1
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 
@@ -24,15 +25,18 @@ from api_key import key
 # retweet_count, favorite_count, favorited, retweeted, lang
 ########################################################################
 
-DATE_FORMAT = "%Y-%m-%d"
 METADATA_LIST = [  # note: "id" is automatically included (hash key)
     "full_text",
     "in_reply_to_status_id"
 ]
+
+# CONSTANTS
+DATE_FORMAT = "%Y-%m-%d"
 BATCH_SIZE = 100  # http://docs.tweepy.org/en/v3.5.0/api.html#API.statuses_lookup
 API_DELAY = 6  # seconds
+TWEET_LIMIT = 3200  # recent tweets
 
-# colors for output
+# OUTPUT COLORS
 RESET = "\033[0m"
 bw = lambda s: "\033[1m\033[37m" + str(s) + RESET  # bold white
 w = lambda s: "\033[1m" + str(s) + RESET  # white
@@ -44,7 +48,7 @@ class Scraper:
 
     def __init__(self, handle):
         self.api = self.__authorize()
-        self.handle = handle
+        self.handle = handle.lower()
         self.outfile = self.handle + ".json"
         self.new_tweets = set()  # ids
         self.tweets = self.__retrieve_existing()  # actual tweets
@@ -79,17 +83,55 @@ class Scraper:
             else:
                 raise e
 
+    def __can_quickscrape(self):
+        usr = self.api.get_user(self.handle)
+        return usr.statuses_count <= TWEET_LIMIT
+
     def scrape(self, start, end, by, loading_delay):
         self.__check_if_scrapable()
-        print(bw("["), g("scraping user"), w("@") + y(self.handle) + g("..."), bw("]"))
-        print(bw("["), w(len(self.tweets)), g("existing tweets in"), y(self.outfile), bw("]"))
-        print(bw("["), g("searching for tweets..."), bw("]"))
-        self.__find_tweets(start, end, by, loading_delay)
-        print(bw("["), g("found"), w(len(self.new_tweets)), g("new tweets"), bw("]"))
-        print(bw("["), g("retrieving new tweets (estimated time: ") +
-              y(str(ceil(len(self.new_tweets) / BATCH_SIZE) * API_DELAY) + " seconds") + g(")..."), bw("]"))
-        self.__retrieve_new_tweets()
-        print(bw("["), g("finished scraping"), bw("]"))
+        pprint(g("scraping user"), w("@") + y(self.handle) + g("..."))
+        pprint(w(len(self.tweets)), g("existing tweets in"), y(self.outfile))
+        pprint(g("searching for tweets..."))
+        if self.__can_quickscrape():
+            pprint(g("user has fewer than"), y(TWEET_LIMIT), g("tweets, conducting quickscrape..."))
+            self.__quickscrape(start, end)
+        else:
+            self.__find_tweets(start, end, by, loading_delay)
+            pprint(g("found"), w(len(self.new_tweets)), g("new tweets"))
+            pprint(g("retrieving new tweets (estimated time: ") +
+                   y(str(ceil(len(self.new_tweets) / BATCH_SIZE) * API_DELAY) + " seconds") + g(")..."))
+            self.__retrieve_new_tweets()
+        pprint(g("finished scraping"))
+
+    def __quickscrape(self, start, end):
+        # can't use Tweepy, need to call actual API
+        def authorize():
+            return OAuth1(key["consumer_key"], key["consumer_secret"], key["access_token"], key["access_token_secret"])
+
+        def form_query():
+            base_url = "https://api.twitter.com/1.1/statuses/user_timeline.json"
+            query = "?screen_name={}&count={}&tweet_mode=extended&include_rts=false".format(self.handle, TWEET_LIMIT)
+            return base_url + query
+
+        def retrieve_payload():
+            request = get(form_query(), auth=authorize())
+            if request.status_code is codes.ok:
+                return dict((tw["id_str"], tw) for tw in request.json())
+            else:
+                request.raise_for_status()
+
+        def filter_tweets(tweets):
+            def get_date(tw):  # parse the timestamp as a datetime and remove timezone
+                return datetime.strptime(tw[1]["created_at"], "%a %b %d %H:%M:%S %z %Y").replace(tzinfo=None)
+
+            return dict(filter(lambda tweet: start <= get_date(tweet) <= end, tweets.items()))
+
+        def extract_metadata(tweets):
+            return dict((id, {attr: tw[attr] for attr in METADATA_LIST}) for id, tw in tweets.items())
+
+        new_tweets = extract_metadata(filter_tweets(retrieve_payload()))
+        pprint(g("found"), w(len(new_tweets.keys() - self.tweets.keys())), g("new tweets"))
+        self.tweets.update(new_tweets)
 
     def __find_tweets(self, start, end, by, delay):
         # gross CSS stuff -- don't touch
@@ -180,7 +222,7 @@ class Scraper:
         # write out
         with open(self.outfile, "w") as o:
             json.dump(self.tweets, o)
-        print(bw("["), g("stored tweets in"), y(self.outfile), bw("]"))
+        pprint(g("stored tweets in"), y(self.outfile))
 
 
 # HELPER
@@ -195,6 +237,10 @@ def get_join_date(handle):
     date_string = "0" + date_string if date_string[1] is " " else date_string  # add on leading 0 if needed
     join_date = datetime.strptime(date_string, "%d %b %Y")
     return join_date
+
+
+def pprint(*arguments):  # output formatting
+    print(bw("["), *arguments, bw("]"))
 
 
 if __name__ == "__main__":
