@@ -26,8 +26,9 @@ from api_key import key
 ########################################################################
 
 METADATA_LIST = [  # note: "id" is automatically included (hash key)
-    "full_text",
-    "in_reply_to_status_id"
+    "created_at",
+    "in_reply_to_status_id",
+    "full_text"
 ]
 
 # CONSTANTS
@@ -35,6 +36,7 @@ DATE_FORMAT = "%Y-%m-%d"
 BATCH_SIZE = 100  # http://docs.tweepy.org/en/v3.5.0/api.html#API.statuses_lookup
 API_DELAY = 6  # seconds
 TWEET_LIMIT = 3200  # recent tweets
+API_LIMIT = 200  # tweets at once
 
 # OUTPUT COLORS
 RESET = "\033[0m"
@@ -70,6 +72,7 @@ class Scraper:
         if path.exists(self.outfile):
             with open(self.outfile) as o:
                 tweets = json.load(o)
+
         return tweets
 
     def __check_if_scrapable(self):
@@ -108,23 +111,40 @@ class Scraper:
         def authorize():
             return OAuth1(key["consumer_key"], key["consumer_secret"], key["access_token"], key["access_token_secret"])
 
-        def form_query():
+        def form_initial_query():
             base_url = "https://api.twitter.com/1.1/statuses/user_timeline.json"
-            query = "?screen_name={}&count={}&tweet_mode=extended&include_rts=false".format(self.handle, TWEET_LIMIT)
+            query = "?screen_name={}&count={}&tweet_mode=extended".format(self.handle, API_LIMIT)
             return base_url + query
 
-        def retrieve_payload():
-            request = get(form_query(), auth=authorize())
+        def form_subsequent_query(max_id):
+            base_url = "https://api.twitter.com/1.1/statuses/user_timeline.json"  # don't use the is_retweet field!
+            query = "?screen_name={}&count={}&tweet_mode=extended&max_id={}".format(self.handle, API_LIMIT, max_id)
+            return base_url + query
+
+        def make_request(query):
+            request = get(query, auth=authorize())
             if request.status_code is codes.ok:
                 return dict((tw["id_str"], tw) for tw in request.json())
             else:
                 request.raise_for_status()
 
+        def retrieve_payload():
+            recent_payload = make_request(form_initial_query())  # query initial 200 tweets
+            all_tweets = dict(recent_payload)
+            for _ in range(ceil(TWEET_LIMIT / API_LIMIT) - 1):  # retrieve the other 3000 tweets
+                oldest_tweet = list(recent_payload.keys())[-1]  # most recently added tweet is oldest
+                recent_payload = make_request(form_subsequent_query(max_id=oldest_tweet))
+                all_tweets.update(recent_payload)
+            return all_tweets
+
         def filter_tweets(tweets):
             def get_date(tw):  # parse the timestamp as a datetime and remove timezone
                 return datetime.strptime(tw[1]["created_at"], "%a %b %d %H:%M:%S %z %Y").replace(tzinfo=None)
 
-            return dict(filter(lambda tweet: start <= get_date(tweet) <= end, tweets.items()))
+            def retweet(tw):
+                return "retweeted_status" in tw[1]
+
+            return dict(filter(lambda tweet: start <= get_date(tweet) <= end and not retweet(tweet), tweets.items()))
 
         def extract_metadata(tweets):
             return dict((id, {attr: tw[attr] for attr in METADATA_LIST}) for id, tw in tweets.items())
@@ -205,7 +225,7 @@ class Scraper:
             nonlocal batch_num
             batch_num += 1
             print(bw("-"), g("batch %s of %s" % (y(batch_num), y(len(batches)))))
-            queried_tweets = self.api.statuses_lookup(id_batch, tweet_mode='extended')
+            queried_tweets = self.api.statuses_lookup(id_batch, tweet_mode="extended")
             sleep(API_DELAY)  # don't hit API rate limit
             return extract_data(t._json for t in queried_tweets)
 
