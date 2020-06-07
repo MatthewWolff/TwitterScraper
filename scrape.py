@@ -9,13 +9,12 @@ from os import path
 from time import sleep
 
 import tweepy
+from api_key import key
 from bs4 import BeautifulSoup
 from requests import get, codes
 from requests_oauthlib import OAuth1
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
-
-from api_key import key
 
 ######################### METADATA ATTRIBUTES ##########################
 # created_at, id, id_str, full_text, truncated, display_text_range,
@@ -155,8 +154,8 @@ class Scraper:
 
     def __find_tweets(self, start, end, by, delay):
         # gross CSS stuff -- don't touch
-        id_selector = ".time a.tweet-timestamp"
-        tweet_selector = "li.js-stream-item"
+        id_selector = "a"  # the id is stored in a link. inspect element the date of the tweet!
+        tweet_selector = "article"  # each tweet is an 'article'
 
         def slide(date, i):
             return date + timedelta(days=i)
@@ -165,6 +164,11 @@ class Scraper:
             base_url = "https://twitter.com/search"
             query = "?f=tweets&vertical=default&q=from%3A{}%20since%3A{}%20until%3A{}include%3Aretweets&src=typd"
             return base_url + query.format(self.handle, start, end)
+
+        def locate_tweet_id(tweet_element):
+            subelements = tweet_element.find_elements_by_tag_name(id_selector)  # grab all links
+            tweet_id_link = list(filter(lambda tw: "status" in tw.get_attribute("href"), subelements))[0]
+            return tweet_id_link.get_attribute("href").split("/")[-1]
 
         with webdriver.Chrome() as driver:  # options are Chrome(), Firefox(), Safari()
             days = (end - start).days + 1
@@ -184,21 +188,19 @@ class Scraper:
                 sleep(delay)
 
                 try:
-                    found_tweets = driver.find_elements_by_css_selector(tweet_selector)
+                    found_tweets = driver.find_elements_by_tag_name(tweet_selector)
                     increment = 10
 
                     while len(found_tweets) >= increment:
                         # print("scrolling down to load more tweets")
                         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                         sleep(delay)
-                        found_tweets = driver.find_elements_by_css_selector(tweet_selector)
+                        found_tweets = driver.find_elements_by_tag_name(tweet_selector)
                         increment += 10
-
-                    # print("{} tweets found, {} total".format(len(found_tweets), len(ids)))
 
                     for tw in found_tweets:
                         try:
-                            tweet_id = tw.find_element_by_css_selector(id_selector).get_attribute("href").split("/")[-1]
+                            tweet_id = locate_tweet_id(tw)
                             ids.add(tweet_id)
                         except StaleElementReferenceException:
                             print("lost element reference", tw)
@@ -251,11 +253,8 @@ def get_join_date(handle):
     Helper method - checks a user's twitter page for the date they joined
     :return: the "%day %month %year" a user joined
     """
-    page = get("https://twitter.com/" + handle).text
-    soup = BeautifulSoup(page, "html.parser")
-    date_string = soup.find("span", {"class": "ProfileHeaderCard-joinDateText"})["title"].split(" - ")[1]
-    date_string = "0" + date_string if date_string[1] is " " else date_string  # add on leading 0 if needed
-    join_date = datetime.strptime(date_string, "%d %b %Y")
+    baby_scraper = Scraper(handle)
+    join_date = baby_scraper.api.get_user(handle).created_at
     return join_date
 
 
