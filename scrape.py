@@ -154,7 +154,7 @@ class Scraper:
 
     def __find_tweets(self, start, end, by, delay):
         # gross CSS stuff -- don't touch
-        id_selector = "a"  # the id is stored in a link. inspect element the date of the tweet!
+        id_selector = "article > div > div > div > div > div > div > div.r-1d09ksm > a"
         tweet_selector = "article"  # each tweet is an 'article'
 
         def slide(date, i):
@@ -164,11 +164,6 @@ class Scraper:
             base_url = "https://twitter.com/search"
             query = "?f=tweets&vertical=default&q=from%3A{}%20since%3A{}%20until%3A{}include%3Aretweets&src=typd"
             return base_url + query.format(self.handle, start, end)
-
-        def locate_tweet_id(tweet_element):
-            subelements = tweet_element.find_elements_by_tag_name(id_selector)  # grab all links
-            tweet_id_link = list(filter(lambda tw: "status" in tw.get_attribute("href"), subelements))[0]
-            return tweet_id_link.get_attribute("href").split("/")[-1]
 
         with webdriver.Chrome() as driver:  # options are Chrome(), Firefox(), Safari()
             days = (end - start).days + 1
@@ -200,12 +195,12 @@ class Scraper:
 
                     for tw in found_tweets:
                         try:
-                            tweet_id = locate_tweet_id(tw)
+                            tweet_id = tw.find_element_by_css_selector(id_selector).get_attribute("href").split("/")[-1]
                             ids.add(tweet_id)
                         except StaleElementReferenceException:
                             print("lost element reference", tw)
                 except NoSuchElementException:
-                    print("no tweets in time period {} -- {}".format(since, until))
+                    print(g("> no tweets in time period {} -- {}".format(since, until)))
 
             self.new_tweets = ids - self.tweets.keys()  # remove known tweets from newly found tweets
 
