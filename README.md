@@ -97,9 +97,10 @@ $ ./scrape.py -u realwoofy
 
 * do you get a driver error when you try and execute the script?
   * make sure your browser is up to date and that you have a driver version that matches your browser version 
-  * you can also open `scrape.py` and change the driver to use Chrome() or Firefox()
+  * you can also open `scrape.py` and change the driver to use `Chrome()` or `Firefox()`
 * does the scraper seem like it's missing tweets that you know should be there?
   * try increasing the `--delay` parameter, it likely isn't waiting long enough for everything to load
+  * try decreasing the `--by` parameter, it likely has too many tweets showing up on certain days
 
 ## Twitter API credentials
 
