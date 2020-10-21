@@ -10,11 +10,10 @@ from time import sleep
 
 import tweepy
 from api_key import key
-from bs4 import BeautifulSoup
 from requests import get, codes
 from requests_oauthlib import OAuth1
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+from re import findall, IGNORECASE
 
 ######################### METADATA ATTRIBUTES ##########################
 # created_at, id, id_str, full_text, truncated, display_text_range,
@@ -29,6 +28,9 @@ METADATA_LIST = [  # note: "id" is automatically included (hash key)
     "in_reply_to_status_id",
     "full_text"
 ]
+
+# Scraping Variables
+TWEET_TAG = "article"
 
 # CONSTANTS
 DATE_FORMAT = "%Y-%m-%d"
@@ -80,7 +82,7 @@ class Scraper:
             if not u.following and u.protected:
                 exit("Cannot scrape a private user unless this API account is following them.")
         except tweepy.TweepError as e:
-            if e.api_code is 50:
+            if e.api_code == 50:
                 exit("This user does not exist.")
             else:
                 raise e
@@ -122,7 +124,7 @@ class Scraper:
 
         def make_request(query):
             request = get(query, auth=authorize())
-            if request.status_code is codes.ok:
+            if request.status_code == codes.ok:
                 return dict((tw["id_str"], tw) for tw in request.json())
             else:
                 request.raise_for_status()
@@ -153,9 +155,6 @@ class Scraper:
         self.tweets.update(new_tweets)
 
     def __find_tweets(self, start, end, by, delay):
-        # gross CSS stuff -- don't touch
-        id_selector = "article > div > div > div > div > div > div > div.r-1d09ksm > a"
-        tweet_selector = "article"  # each tweet is an 'article'
 
         def slide(date, i):
             return date + timedelta(days=i)
@@ -165,7 +164,14 @@ class Scraper:
             query = "?f=tweets&vertical=default&q=from%3A{}%20since%3A{}%20until%3A{}include%3Aretweets&src=typd"
             return base_url + query.format(self.handle, start, end)
 
-        with webdriver.Chrome() as driver:  # options are Chrome(), Firefox(), Safari()
+        def parse_tweet_ids():
+            """
+            parse the page source for all tweets from the user
+            :return: the
+            """
+            return set(findall(f'(?<="/{self.handle}/status/)[0-9]+', driver.page_source, flags=IGNORECASE))
+
+        with init_chromedriver(debug=False) as driver:  # options are Chrome(), Firefox(), Safari()
             days = (end - start).days + 1
 
             # scrape tweets using a sliding window
@@ -182,25 +188,20 @@ class Scraper:
                 # load
                 sleep(delay)
 
-                try:
-                    found_tweets = driver.find_elements_by_tag_name(tweet_selector)
-                    increment = 10
+                # scroll page until no further tweets
+                first_pass, second_pass = [-1], []
+                while first_pass != second_pass:
+                    first_pass = parse_tweet_ids()
+                    ids |= first_pass  # add these right away, because tweets might get unloaded
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    sleep(delay)
+                    second_pass = parse_tweet_ids()
+                    ids |= second_pass
 
-                    while len(found_tweets) >= increment:
-                        # print("scrolling down to load more tweets")
-                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                        sleep(delay)
-                        found_tweets = driver.find_elements_by_tag_name(tweet_selector)
-                        increment += 10
-
-                    for tw in found_tweets:
-                        try:
-                            tweet_id = tw.find_element_by_css_selector(id_selector).get_attribute("href").split("/")[-1]
-                            ids.add(tweet_id)
-                        except StaleElementReferenceException:
-                            print("lost element reference", tw)
-                except NoSuchElementException:
+                if len(second_pass) == 0:
                     print(g("> no tweets in time period {} -- {}".format(since, until)))
+
+                print(g("  tweets found so far: " + str(len(ids))))
 
             self.new_tweets = ids - self.tweets.keys()  # remove known tweets from newly found tweets
 
@@ -232,7 +233,7 @@ class Scraper:
         def dict_combiner(d1, d2): return d1.update(d2) or d1  # cheeky
 
         # consolidate all tweet dictionaries
-        tweets = reduce(dict_combiner, tweet_batches) if len(tweet_batches) is not 0 else dict()
+        tweets = reduce(dict_combiner, tweet_batches) if len(tweet_batches) != 0 else dict()
         return tweets
 
     def dump_tweets(self):
@@ -255,6 +256,15 @@ def get_join_date(handle):
 
 def pprint(*arguments):  # output formatting
     print(bw("["), *arguments, bw("]"))
+
+
+def init_chromedriver(debug=False):
+    options = webdriver.ChromeOptions()
+    if not debug:
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument("--disable-setuid-sandbox")
+    return webdriver.Chrome(options=options)
 
 
 if __name__ == "__main__":
