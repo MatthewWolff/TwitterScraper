@@ -239,7 +239,7 @@ class Scraper:
     def dump_tweets(self):
         # write out
         with open(self.outfile, "w") as o:
-            json.dump(self.tweets, o)
+            json.dump(self.tweets, o, indent=4)
         pprint(g("stored tweets in"), y(self.outfile))
 
 
