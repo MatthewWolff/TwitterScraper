@@ -78,7 +78,7 @@ class Scraper:
 
     def __check_if_scrapable(self):
         try:
-            u = self.api.get_user(self.handle)
+            u = self.api.get_user(screen_name=self.handle)
             if not u.following and u.protected:
                 exit("Cannot scrape a private user unless this API account is following them.")
         except tweepy.TweepError as e:
@@ -88,7 +88,7 @@ class Scraper:
                 raise e
 
     def __can_quickscrape(self):
-        usr = self.api.get_user(self.handle)
+        usr = self.api.get_user(screen_name=self.handle)
         return usr.statuses_count <= TWEET_LIMIT
 
     def scrape(self, start, end, by, loading_delay):
@@ -172,7 +172,7 @@ class Scraper:
             return set(findall(f'(?<="/{self.handle}/status/)[0-9]+', driver.page_source, flags=IGNORECASE))
 
         with init_chromedriver(debug=False) as driver:  # options are Chrome(), Firefox(), Safari()
-            days = (end - start).days + 1
+            days = (end.replace(tzinfo=None) - start.replace(tzinfo=None)).days + 1
 
             # scrape tweets using a sliding window
             window_start, ids = start, set()
@@ -250,7 +250,7 @@ def get_join_date(handle):
     :return: the "%day %month %year" a user joined
     """
     baby_scraper = Scraper(handle)
-    join_date = baby_scraper.api.get_user(handle).created_at
+    join_date = baby_scraper.api.get_user(screen_name=handle).created_at
     return join_date
 
 
