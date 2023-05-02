@@ -281,5 +281,5 @@ if __name__ == "__main__":
     end = datetime.strptime(args.until, DATE_FORMAT) if args.until else datetime.now()
 
     user = Scraper(args.username)
-    user.scrape(begin, end, args.by, args.delay)
+    user.scrape(begin.replace(tzinfo=None), end.replace(tzinfo=None), args.by, args.delay)
     user.dump_tweets()
