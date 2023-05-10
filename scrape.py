@@ -8,11 +8,13 @@ from math import ceil
 from os import path
 from re import findall, IGNORECASE
 from time import sleep
+from typing import List, Dict, Set, Iterable
 
 import tweepy
 from requests import get, codes
 from requests_oauthlib import OAuth1
 from selenium import webdriver
+from tweepy.models import Status
 
 from api_key import key
 
@@ -35,10 +37,11 @@ TWEET_TAG = "article"
 
 # CONSTANTS
 DATE_FORMAT = "%Y-%m-%d"
-BATCH_SIZE = 100  # http://docs.tweepy.org/en/v3.5.0/api.html#API.statuses_lookup
+BATCH_SIZE = 100  # https://docs.tweepy.org/en/v4.14.0/api.html?#tweepy.API.lookup_statuses
 API_DELAY = 6  # seconds
 TWEET_LIMIT = 3200  # recent tweets
 API_LIMIT = 200  # tweets at once
+KEY_INDEX, VALUE_INDEX = 0, 1  # when converting dict entry to list
 
 # OUTPUT COLORS
 RESET = "\033[0m"
@@ -50,7 +53,7 @@ y = lambda s: "\033[33m" + str(s) + RESET  # yellow
 
 class Scraper:
 
-    def __init__(self, handle, debug=False):
+    def __init__(self, handle: str, debug=False):
         self.api = self.__authorize()
         self.handle = handle.lower()
         self.outfile = self.handle + ".json"
@@ -59,7 +62,7 @@ class Scraper:
         self.debug = debug
 
     @staticmethod
-    def __authorize():
+    def __authorize() -> tweepy.API:
         consumer_key = key["consumer_key"]
         consumer_secret = key["consumer_secret"]
         access_token = key["access_token"]
@@ -70,7 +73,7 @@ class Scraper:
         api = tweepy.API(auth)
         return api
 
-    def __retrieve_existing(self):
+    def __retrieve_existing(self) -> Dict[str, dict]:
         tweets = dict()
         if path.exists(self.outfile):
             with open(self.outfile) as o:
@@ -80,20 +83,17 @@ class Scraper:
 
     def __check_if_scrapable(self):
         try:
-            u = self.api.get_user(self.handle)
+            u = self.api.get_user(screen_name=self.handle)
             if not u.following and u.protected:
                 exit("Cannot scrape a private user unless this API account is following them.")
-        except tweepy.TweepError as e:
-            if e.api_code == 50:
-                exit("This user does not exist.")
-            else:
-                raise e
+        except tweepy.NotFound:
+            exit("This user does not exist.")
 
-    def __can_quickscrape(self):
-        usr = self.api.get_user(self.handle)
+    def __can_quickscrape(self) -> bool:
+        usr = self.api.get_user(screen_name=self.handle)
         return usr.statuses_count <= TWEET_LIMIT
 
-    def scrape(self, start, end, by, loading_delay):
+    def scrape(self, start: datetime, end: datetime, by: int, loading_delay: int):
         self.__check_if_scrapable()
         pprint(g("scraping user"), w("@") + y(self.handle) + g("..."))
         pprint(w(len(self.tweets)), g("existing tweets in"), y(self.outfile))
@@ -109,69 +109,70 @@ class Scraper:
             self.__retrieve_new_tweets()
         pprint(g("finished scraping"))
 
-    def __quickscrape(self, start, end):
+    def __quickscrape(self, start: datetime, end: datetime):
         # can't use Tweepy, need to call actual API
-        def authorize():
+        def authorize() -> OAuth1:
             return OAuth1(key["consumer_key"], key["consumer_secret"], key["access_token"], key["access_token_secret"])
 
-        def form_initial_query():
+        def form_initial_query() -> str:
             base_url = "https://api.twitter.com/1.1/statuses/user_timeline.json"
             query = "?screen_name={}&count={}&tweet_mode=extended".format(self.handle, API_LIMIT)
             return base_url + query
 
-        def form_subsequent_query(max_id):
+        def form_subsequent_query(max_id: str) -> str:
             base_url = "https://api.twitter.com/1.1/statuses/user_timeline.json"  # don't use the is_retweet field!
             query = "?screen_name={}&count={}&tweet_mode=extended&max_id={}".format(self.handle, API_LIMIT, max_id)
             return base_url + query
 
-        def make_request(query):
+        def make_request(query: str) -> Dict[str, dict]:
             request = get(query, auth=authorize())
             if request.status_code == codes.ok:
                 return dict((tw["id_str"], tw) for tw in request.json())
             else:
                 request.raise_for_status()
 
-        def retrieve_payload():
+        def retrieve_payload() -> Dict[str, dict]:
             recent_payload = make_request(form_initial_query())  # query initial 200 tweets
             all_tweets = dict(recent_payload)
             for _ in range(ceil(TWEET_LIMIT / API_LIMIT) - 1):  # retrieve the other 3000 tweets
-                oldest_tweet = list(recent_payload.keys())[-1]  # most recently added tweet is oldest
-                recent_payload = make_request(form_subsequent_query(max_id=oldest_tweet))
+                oldest_tweet_id = list(recent_payload.keys())[-1]  # most recently added tweet is oldest
+                recent_payload = make_request(form_subsequent_query(max_id=oldest_tweet_id))
                 all_tweets.update(recent_payload)
             return all_tweets
 
-        def filter_tweets(tweets):
+        def filter_tweets(tweets: dict):
             def get_date(tw):  # parse the timestamp as a datetime and remove timezone
-                return datetime.strptime(tw[1]["created_at"], "%a %b %d %H:%M:%S %z %Y").replace(tzinfo=None)
+                return datetime.strptime(tw[VALUE_INDEX]["created_at"], "%a %b %d %H:%M:%S %z %Y").replace(tzinfo=None)
 
             def retweet(tw):
-                return "retweeted_status" in tw[1]
+                return "retweeted_status" in tw[VALUE_INDEX]
 
             return dict(filter(lambda tweet: start <= get_date(tweet) <= end and not retweet(tweet), tweets.items()))
 
-        def extract_metadata(tweets):
+        def extract_metadata(tweets: Dict[str, dict]) -> dict:
             return dict((id, {attr: tw[attr] for attr in METADATA_LIST}) for id, tw in tweets.items())
 
         new_tweets = extract_metadata(filter_tweets(retrieve_payload()))
         pprint(g("found"), w(len(new_tweets.keys() - self.tweets.keys())), g("new tweets"))
         self.tweets.update(new_tweets)
 
-    def __find_tweets(self, start, end, by, delay):
+    def __find_tweets(self, start: datetime, end: datetime, by: int, delay: int):
 
-        def slide(date, i):
+        def slide(date: datetime, i: int) -> datetime:
             return date + timedelta(days=i)
 
-        def form_url(start, end):
+        def form_url(start: str, end: str) -> str:
             base_url = "https://twitter.com/search"
             query = "?f=tweets&vertical=default&q=from%3A{}%20since%3A{}%20until%3A{}include%3Aretweets&src=typd"
             return base_url + query.format(self.handle, start, end)
 
-        def parse_tweet_ids():
+        def parse_tweet_ids(source: str) -> Set[str]:
             """
             parse the page source for all tweets from the user
-            :return: the
+            :param source a string containing the HTML source for a page
+            :return: the set of all tweets found in the given string
             """
-            return set(findall(f'(?<="/{self.handle}/status/)[0-9]+', driver.page_source, flags=IGNORECASE))
+            return set(findall(f'(?<="/{self.handle}/status/)[0-9]+', source, flags=IGNORECASE))
 
         with init_chromedriver(debug=self.debug) as driver:  # options are Chrome(), Firefox(), Safari()
             days = (end - start).days + 1
@@ -184,7 +185,10 @@ class Scraper:
                 until = slide(window_start, by).strftime(DATE_FORMAT)
 
                 # query tweets and slide window along
-                driver.get(form_url(since, until))
+                url = form_url(since, until)
+                if self.debug:
+                    print(f"DEBUG: REQUESTED URL - {url}")
+                driver.get(url)
                 window_start = slide(window_start, by)
 
                 # load
@@ -193,11 +197,11 @@ class Scraper:
                 # scroll page until no further tweets
                 first_pass, second_pass = [-1], []
                 while first_pass != second_pass:
-                    first_pass = parse_tweet_ids()
+                    first_pass = parse_tweet_ids(driver.page_source)
                     ids |= first_pass  # add these right away, because tweets might get unloaded
                     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                     sleep(delay)
-                    second_pass = parse_tweet_ids()
+                    second_pass = parse_tweet_ids(driver.page_source)
                     ids |= second_pass
 
                 if len(second_pass) == 0:
@@ -218,21 +222,21 @@ class Scraper:
         batches = [new_tweet_list[i:i + BATCH_SIZE] for i in batch_indices]
         batch_num = 0  # used for enumerating batches
 
-        def extract_data(tweet_list):  # dictionary of id: metadata key-value pairs
+        def extract_data(tweet_list: Iterable[dict]) -> dict:  # dictionary of id: metadata key-value pairs
             return dict((tw["id"], {attr: tw[attr] for attr in METADATA_LIST}) for tw in tweet_list)
 
-        def staggered_lookup(id_batch):
+        def staggered_lookup(id_batch: List[str]) -> dict:
             nonlocal batch_num
             batch_num += 1
             print(bw("-"), g("batch %s of %s" % (y(batch_num), y(len(batches)))))
-            queried_tweets = self.api.statuses_lookup(id_batch, tweet_mode="extended")
+            queried_tweets: List[Status] = self.api.lookup_statuses(id_batch, tweet_mode="extended")
             sleep(API_DELAY)  # don't hit API rate limit
             return extract_data(t._json for t in queried_tweets)
 
         # collect all tweets as a list of dictionaries
         tweet_batches = [staggered_lookup(batch) for batch in batches]
 
-        def dict_combiner(d1, d2): return d1.update(d2) or d1  # cheeky
+        def dict_combiner(d1: dict, d2: dict) -> dict: return d1.update(d2) or d1  # cheeky
 
         # consolidate all tweet dictionaries
         tweets = reduce(dict_combiner, tweet_batches) if len(tweet_batches) != 0 else dict()
@@ -246,7 +250,7 @@ class Scraper:
 
 
 # HELPER
-def get_join_date(handle):
+def get_join_date(handle: str) -> str:
     """
     Helper method - checks a user's twitter page for the date they joined
     :return: the "%day %month %year" a user joined
@@ -260,7 +264,7 @@ def pprint(*arguments):  # output formatting
     print(bw("["), *arguments, bw("]"))
 
 
-def init_chromedriver(debug=False):
+def init_chromedriver(debug: bool = False) -> webdriver.Chrome:
     options = webdriver.ChromeOptions()
     if not debug:
         options.add_argument('--headless')
