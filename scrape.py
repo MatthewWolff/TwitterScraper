@@ -6,14 +6,15 @@ from datetime import datetime, timedelta
 from functools import reduce
 from math import ceil
 from os import path
+from re import findall, IGNORECASE
 from time import sleep
 
 import tweepy
-from api_key import key
 from requests import get, codes
 from requests_oauthlib import OAuth1
 from selenium import webdriver
-from re import findall, IGNORECASE
+
+from api_key import key
 
 ######################### METADATA ATTRIBUTES ##########################
 # created_at, id, id_str, full_text, truncated, display_text_range,
@@ -49,12 +50,13 @@ y = lambda s: "\033[33m" + str(s) + RESET  # yellow
 
 class Scraper:
 
-    def __init__(self, handle):
+    def __init__(self, handle, debug=False):
         self.api = self.__authorize()
         self.handle = handle.lower()
         self.outfile = self.handle + ".json"
         self.new_tweets = set()  # ids
         self.tweets = self.__retrieve_existing()  # actual tweets
+        self.debug = debug
 
     @staticmethod
     def __authorize():
@@ -171,7 +173,7 @@ class Scraper:
             """
             return set(findall(f'(?<="/{self.handle}/status/)[0-9]+', driver.page_source, flags=IGNORECASE))
 
-        with init_chromedriver(debug=False) as driver:  # options are Chrome(), Firefox(), Safari()
+        with init_chromedriver(debug=self.debug) as driver:  # options are Chrome(), Firefox(), Safari()
             days = (end - start).days + 1
 
             # scrape tweets using a sliding window
@@ -275,11 +277,12 @@ if __name__ == "__main__":
     parser.add_argument("--until", help="Get Tweets before this date (Example: 2018-12-07).")
     parser.add_argument("--by", help="Scrape this many days at a time", type=int, default=7)
     parser.add_argument("--delay", help="Time given to load a page before scraping it (seconds)", type=int, default=3)
+    parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
 
     begin = datetime.strptime(args.since, DATE_FORMAT) if args.since else get_join_date(args.username)
     end = datetime.strptime(args.until, DATE_FORMAT) if args.until else datetime.now()
 
-    user = Scraper(args.username)
+    user = Scraper(args.username, debug=args.debug)
     user.scrape(begin.replace(tzinfo=None), end.replace(tzinfo=None), args.by, args.delay)
     user.dump_tweets()
