@@ -281,7 +281,7 @@ if __name__ == "__main__":
     parser.add_argument("--until", help="Get Tweets before this date (Example: 2018-12-07).")
     parser.add_argument("--by", help="Scrape this many days at a time", type=int, default=7)
     parser.add_argument("--delay", help="Time given to load a page before scraping it (seconds)", type=int, default=3)
-    parser.add_argument("--debug", action='store_true')
+    parser.add_argument("--debug", action='store_true', help="Debug mode. Shows Selenium at work + additional logging")
     args = parser.parse_args()
 
     begin = datetime.strptime(args.since, DATE_FORMAT) if args.since else get_join_date(args.username)

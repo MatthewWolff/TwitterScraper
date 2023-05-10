@@ -12,14 +12,14 @@ NOTE: This scraper will notice if a user has less than 3200 tweets. In this case
 
 ## Requirements (or rather, what I used)
 
-* python3 (3.7.3)
-* Modules (via `pip`):
-  * selenium (3.141.0)
-  * tweepy (3.8.0)
-  * requests (2.21.0)
-  * requests_oauthlib (1.3.0)
-  * beautifulsoup4 (4.7.1)
-* [Chrome webdriver](https://chromedriver.chromium.org/downloads) (you can use other kinds. Personally, `brew install chromedriver`)
+* python3
+* Modules (via `pip` -  see [requirements.txt](requirements.txt)):
+  * selenium 
+  * tweepy 
+  * requests 
+  * requests_oauthlib 
+  * beautifulsoup4 
+* [Chrome webdriver](https://chromedriver.chromium.org/downloads) (you can use other drivers. Personally I use, `brew install chromedriver` because I work on a Mac)
 * [Twitter API developer credentials](https://dev.twitter.com)
 
 ## Example:
@@ -39,7 +39,7 @@ optional arguments:
   --until UNTIL         Get Tweets before this date (Example: 2018-12-07).
   --by BY               Scrape this many days at a time
   --delay DELAY         Time given to load a page before scraping it (seconds)
-
+  --debug               Debug mode. Shows Selenium at work + additional logging
 
 $ ./scrape.py -u phillipcompeau --by 14 --since 2018-01-01 --until 2019-01-01 
 [ scraping user @phillipcompeau... ]
@@ -82,12 +82,13 @@ $ ./scrape.py -u realwoofy
 
 * run `python3 scrape.py` and add the arguments you desire. Try `./scrape.py --help` for all options.
   * `-u` followed by the username [required]
-  * `--since` followed by a date string, e.g., (2017-01-01). Defaults to whenever the user created their twitter
+  * `--since` followed by a date string, e.g., (2017-01-01). Defaults to whenever the user created their Twitter
   * `--until` followed by a date string, e.g., (2018-01-01). Defaults to the current day 
   * `--by` followed by the number of days to scrape at once (default: 7)
     * If someone tweets dozens of times a day, it might be better to use a lower number
   * `--delay` followed by an integer. This will be the number of seconds to wait on each page load before reading the page
     * if your internet is slow, put this higher (default: 3 seconds)
+  * `--debug`. This will disable `headless` mode on the WebDriver so that you can watch it scrape. This is useful for assessing why it's unable to find tweets.
 * a browser window will pop up and begin scraping 
 * when the browser window closes, metadata collection begins for all new tweets
 * when collection finishes, it will dump all the data to a `.json` file that corresponds to the twitter handle
