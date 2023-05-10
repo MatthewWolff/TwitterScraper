@@ -194,6 +194,20 @@ class Scraper:
                 # load
                 sleep(delay)
 
+                # TODO: create workaround for twitter requiring login for search
+                if driver.current_url == "https://twitter.com/i/flow/login":
+                    print("ATTENTION: Twitter seemingly requires a log-in before allowing access to search...")
+                    print("  Please log-in... The scraping code cannot work without search access :(")
+                    print("  You'll need to use the `--debug` flag to view the Selenium browser and enter your log-in")
+                    print()
+                    print("  This is not the intended user experience")
+                    print("  I'm tracking this issue here: https://github.com/MatthewWolff/TwitterScraper/issues/13")
+                    print("  Sorry for the inconvenience, I'm trying to figure out a clean workaround for this")
+                    print()
+                    print("You have 15 seconds to log-in before the execution of the code resumes")
+                    sleep(15)
+                    driver.get(url)
+
                 # scroll page until no further tweets
                 first_pass, second_pass = [-1], []
                 while first_pass != second_pass:
